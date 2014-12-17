@@ -1311,8 +1311,10 @@ namespace MonoDevelop.Components.Commands
 				CurrentCommand = null;
 			}
 
-			if (guiLock > 0)
+			if (guiLock > 0) {
+				LoggingService.LogError (string.Format ("Querying in guiLock for command {0}\n{1}", info.Command.Id, new System.Diagnostics.StackTrace()));
 				info.Enabled = false;
+			}
 			return info;
 		}
 		
