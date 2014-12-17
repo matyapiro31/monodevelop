@@ -155,6 +155,10 @@ namespace MonoDevelop.Ide
 		
 		public IAsyncOperation CurrentBuildOperation {
 			get { return currentBuildOperation; }
+			private set {
+				currentBuildOperation = value ?? NullAsyncOperation.Success;
+				OnCurrentBuildOperationChanged (EventArgs.Empty);
+			}
 		}
 		
 		public IAsyncOperation CurrentRunOperation {
@@ -945,7 +949,7 @@ namespace MonoDevelop.Ide
 				OnStartClean (monitor, tt);
 				DispatchService.ThreadDispatch (() => CleanAsync (entry, monitor, tt, false));
 				
-				currentBuildOperation = monitor.AsyncOperation;
+				CurrentBuildOperation = monitor.AsyncOperation;
 				currentBuildOperationOwner = entry;
 				currentBuildOperation.Completed += delegate {
 					currentBuildOperationOwner = null;
@@ -1093,7 +1097,7 @@ namespace MonoDevelop.Ide
 					}
 					BuildSolutionItemAsync (entry, monitor, tt);
 				}, null);
-				currentBuildOperation = monitor.AsyncOperation;
+				CurrentBuildOperation = monitor.AsyncOperation;
 				currentBuildOperationOwner = entry;
 				currentBuildOperation.Completed += delegate { currentBuildOperationOwner = null; };
 			} catch {
@@ -1130,7 +1134,7 @@ namespace MonoDevelop.Ide
 				IProgressMonitor monitor = IdeApp.Workbench.ProgressMonitors.GetBuildProgressMonitor ();
 				BeginBuild (monitor, tt, false);
 				DispatchService.ThreadDispatch (() => BuildSolutionItemAsync (entry, monitor, tt));
-				currentBuildOperation = monitor.AsyncOperation;
+				CurrentBuildOperation = monitor.AsyncOperation;
 				currentBuildOperationOwner = entry;
 				currentBuildOperation.Completed += delegate { currentBuildOperationOwner = null; };
 			} catch {
@@ -1961,10 +1965,17 @@ namespace MonoDevelop.Ide
 		public event AddEntryEventHandler AddingEntryToCombine;
 
 		public event EventHandler CurrentRunOperationChanged;
+		public event EventHandler CurrentBuildOperationChanged;
 		public event EventHandler<EditReferencesEventArgs> BeforeEditReferences;
 		protected virtual void OnCurrentRunOperationChanged (EventArgs e)
 		{
 			var handler = CurrentRunOperationChanged;
+			if (handler != null)
+				handler (this, e);
+		}
+		protected virtual void OnCurrentBuildOperationChanged (EventArgs e)
+		{
+			var handler = CurrentBuildOperationChanged;
 			if (handler != null)
 				handler (this, e);
 		}
