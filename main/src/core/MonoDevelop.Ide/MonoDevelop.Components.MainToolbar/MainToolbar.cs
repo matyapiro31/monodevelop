@@ -84,6 +84,9 @@ namespace MonoDevelop.Components.MainToolbar
 		ConfigurationMerger configurationMerger = new ConfigurationMerger ();
 
 		Solution currentSolution;
+		CommandInfo currentCommandInfo;
+		IAsyncOperation currentOperation;
+		RoundButton.OperationIcon currentOperationIcon;
 		bool settingGlobalConfig;
 		SolutionEntityItem currentStartupProject;
 
@@ -208,13 +211,15 @@ namespace MonoDevelop.Components.MainToolbar
 		{
 			executionTargetsChanged = DispatchService.GuiDispatch (new EventHandler (HandleExecutionTargetsChanged));
 
-			IdeApp.Workspace.ActiveConfigurationChanged += (sender, e) => UpdateCombos ();
+			IdeApp.Workspace.ActiveConfigurationChanged += (sender, e) => { UpdateCombos (); UpdateStartButtonCommandInfo (); };
 			IdeApp.Workspace.ConfigurationsChanged += (sender, e) => UpdateCombos ();
 
 			IdeApp.Workspace.SolutionLoaded += (sender, e) => UpdateCombos ();
 			IdeApp.Workspace.SolutionUnloaded += (sender, e) => UpdateCombos ();
 
 			IdeApp.ProjectOperations.CurrentSelectedSolutionChanged += HandleCurrentSelectedSolutionChanged;
+			IdeApp.ProjectOperations.CurrentRunOperationChanged += (sender, e) => RegisterCurrentOperation (IdeApp.ProjectOperations.CurrentRunOperation);
+			IdeApp.ProjectOperations.CurrentBuildOperationChanged += (sender, e) => RegisterCurrentOperation (IdeApp.ProjectOperations.CurrentBuildOperation);
 
 			WidgetFlags |= Gtk.WidgetFlags.AppPaintable;
 
@@ -374,6 +379,7 @@ namespace MonoDevelop.Components.MainToolbar
 			UpdateCombos ();
 
 			button.Clicked += HandleStartButtonClicked;
+			UpdateStartButtonCommandInfo ();
 			IdeApp.CommandService.RegisterCommandBar (this);
 
 			IdeApp.CommandService.ActiveWidgetChanged += (sender, e) => {
@@ -419,6 +425,21 @@ namespace MonoDevelop.Components.MainToolbar
 			TrackStartupProject ();
 
 			UpdateCombos ();
+			UpdateStartButtonCommandInfo ();
+		}
+
+		void RegisterCurrentOperation (IAsyncOperation op)
+		{
+			currentOperation = op;
+			currentOperation.Completed += HandleOperationCompleted;
+			UpdateStartButtonCommandInfo ();
+		}
+
+		void HandleOperationCompleted (IAsyncOperation op)
+		{
+			currentOperation.Completed -= HandleOperationCompleted;
+			currentOperation = null;
+			UpdateStartButtonCommandInfo ();
 		}
 
 		void TrackStartupProject ()
@@ -458,6 +479,7 @@ namespace MonoDevelop.Components.MainToolbar
 		{
 			TrackStartupProject ();
 			UpdateCombos ();
+			UpdateStartButtonCommandInfo ();
 		}
 
 		void UpdateSearchEntryLabel ()
@@ -934,37 +956,35 @@ namespace MonoDevelop.Components.MainToolbar
 			SetSearchCategory ("type");
 		}
 
-		CommandInfo GetStartButtonCommandInfo (out RoundButton.OperationIcon operation)
+		void UpdateStartButtonCommandInfo ()
 		{
-			if (!IdeApp.ProjectOperations.CurrentRunOperation.IsCompleted || !IdeApp.ProjectOperations.CurrentBuildOperation.IsCompleted) {
-				operation = RoundButton.OperationIcon.Stop;
-				return IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.Stop);
-			}
-			else {
-				operation = RoundButton.OperationIcon.Run;
-				var ci = IdeApp.CommandService.GetCommandInfo ("MonoDevelop.Debugger.DebugCommands.Debug");
-				if (!ci.Enabled || !ci.Visible) {
-					// If debug is not enabled, try Run
-					ci = IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.Run);
-					if (!ci.Enabled || !ci.Visible) {
-						// Running is not possible, then allow building
-						var bci = IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.BuildSolution);
-						if (bci.Enabled && bci.Visible) {
-							operation = RoundButton.OperationIcon.Build;
-							ci = bci;
+			IdeApp.CommandService.GuiUnlocked += delegate {
+				if (!IdeApp.ProjectOperations.CurrentRunOperation.IsCompleted || !IdeApp.ProjectOperations.CurrentBuildOperation.IsCompleted) {
+					currentOperationIcon = RoundButton.OperationIcon.Stop;
+					currentCommandInfo = IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.Stop);
+				} else {
+					currentOperationIcon = RoundButton.OperationIcon.Run;
+					currentCommandInfo = IdeApp.CommandService.GetCommandInfo ("MonoDevelop.Debugger.DebugCommands.Debug");
+					if (!currentCommandInfo.Enabled || !currentCommandInfo.Visible) {
+						// If debug is not enabled, try Run
+						currentCommandInfo = IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.Run);
+						if (!currentCommandInfo.Enabled || !currentCommandInfo.Visible) {
+							// Running is not possible, then allow building
+							var bci = IdeApp.CommandService.GetCommandInfo (MonoDevelop.Ide.Commands.ProjectCommands.BuildSolution);
+							if (bci.Enabled && bci.Visible) {
+								currentOperationIcon = RoundButton.OperationIcon.Build;
+								currentCommandInfo = bci;
+							}
 						}
 					}
 				}
-				return ci;
-			}
+			};
 		}
 		
 		void HandleStartButtonClicked (object sender, EventArgs e)
 		{
-			RoundButton.OperationIcon operation;
-			var ci = GetStartButtonCommandInfo (out operation);
-			if (ci.Enabled)
-				IdeApp.CommandService.DispatchCommand (ci.Command.Id);
+			if (currentCommandInfo.Enabled)
+				IdeApp.CommandService.DispatchCommand (currentCommandInfo.Command.Id);
 		}
 
 		#region ICommandBar implementation
@@ -974,13 +994,11 @@ namespace MonoDevelop.Components.MainToolbar
 		{
 			if (!toolbarEnabled)
 				return;
-			RoundButton.OperationIcon operation;
-			var ci = GetStartButtonCommandInfo (out operation);
-			if (ci.Enabled != button.Sensitive)
-				button.Sensitive = ci.Enabled;
+			if (currentCommandInfo.Enabled != button.Sensitive)
+				button.Sensitive = currentCommandInfo.Enabled;
 
-			button.Icon = operation;
-			var stopped = operation != RoundButton.OperationIcon.Stop;
+			button.Icon = currentOperationIcon;
+			var stopped = currentOperationIcon != RoundButton.OperationIcon.Stop;
 			if (configurationCombosBox.Sensitive != stopped)
 				configurationCombosBox.Sensitive = stopped;
 		}
