@@ -451,7 +451,19 @@ namespace MonoDevelop.Components.Commands
 			bindings.Dispose ();
 			lastFocused = null;
 		}
-		
+
+		EventHandler guiUnlockedEvent;
+		public event EventHandler GuiUnlocked {
+			add {
+				if (guiLock == 0)
+					value (null, EventArgs.Empty);
+				else
+					guiUnlockedEvent += value;
+			}
+			remove {
+				guiUnlockedEvent -= value;
+			}
+		}
 		/// <summary>
 		/// Disables all commands
 		/// </summary>
@@ -478,7 +490,15 @@ namespace MonoDevelop.Components.Commands
 			
 			if (guiLock > 0)
 				guiLock--;
-			return guiLock == 0;
+
+			if (guiLock == 0) {
+				if (guiUnlockedEvent != null) {
+					guiUnlockedEvent (this, EventArgs.Empty);
+					guiUnlockedEvent = null;
+				}
+				return true;
+			}
+			return false;
 		}
 		
 		/// <summary>
